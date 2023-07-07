@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# This script will do the following to install RustDesk Pro
-# 1. Install some dependencys
+# This script will do the following to install RustDesk Server Pro
+# 1. Install some dependencies
 # 2. Setup ufw firewall if available
-# 3. Create a Folder /var/lib/rustdesk-server
+# 3. Create 2 Folders /var/lib/rustdesk-server and /var/log/rustdesk-server
 # 4. Download and extract RustDesk Pro Services to the above folder
 # 5. Create systemd services for hbbs and hbbr
 # 6. If you chose Domain, it will install Nginx and certbot, allowing the API to be available on port 443 (https) and get an SSL certificate over port 80, this will autorenew.
@@ -96,9 +96,9 @@ fi
 
 # Setting up firewall
 
-ufw allow 21115:21119/tcp
-ufw allow 22/tcp
-ufw allow 21116/udp
+sudo ufw allow 21115:21119/tcp
+sudo ufw allow 22/tcp
+sudo ufw allow 21116/udp
 sudo ufw enable
 
 # Make Folder /var/lib/rustdesk-server/
@@ -119,38 +119,38 @@ if [ "${ARCH}" = "x86_64" ] ; then
 wget https://github.com/rustdesk/rustdesk-server-pro/releases/download/1.1.8/rustdesk-server-linux-amd64.zip
 unzip rustdesk-server-linux-amd64.zip
 mv amd64/static /var/lib/rustdesk-server/
-mv amd64/hbbr /usr/bin/
-mv amd64/hbbs /usr/bin/
+sudo mv amd64/hbbr /usr/bin/
+sudo mv amd64/hbbs /usr/bin/
 rm -rf amd64/
 rm -rf rustdesk-server-linux-amd64.zip
 elif [ "${ARCH}" = "armv7l" ] ; then
 wget "https://github.com/rustdesk/rustdesk-server-pro/releases/download/${RDLATEST}/rustdesk-server-linux-armv7.zip"
 unzip rustdesk-server-linux-armv7.zip
 mv armv7/static /var/lib/rustdesk-server/
-mv armv7/hbbr /usr/bin/
-mv armv7/hbbs /usr/bin/
+sudo mv armv7/hbbr /usr/bin/
+sudo mv armv7/hbbs /usr/bin/
 rm -rf armv7/
 rm -rf rustdesk-server-linux-armv7.zip
 elif [ "${ARCH}" = "aarch64" ] ; then
 wget "https://github.com/rustdesk/rustdesk-server-pro/releases/download/${RDLATEST}/rustdesk-server-linux-arm64v8.zip"
 unzip rustdesk-server-linux-arm64v8.zip
 mv arm64v8/static /var/lib/rustdesk-server/
-mv arm64v8/hbbr /usr/bin/
-mv arm64v8/hbbs /usr/bin/
+sudo mv arm64v8/hbbr /usr/bin/
+sudo mv arm64v8/hbbs /usr/bin/
 rm -rf arm64v8/
 rm -rf rustdesk-server-linux-arm64v8.zip
 fi
 
-chmod +x /usr/bin/hbbs
-chmod +x /usr/bin/hbbr
+sudo chmod +x /usr/bin/hbbs
+sudo chmod +x /usr/bin/hbbr
 
 
-# Make Folder /var/log/rustdesk/
-if [ ! -d "/var/log/rustdesk" ]; then
-    echo "Creating /var/log/rustdesk"
-    sudo mkdir -p /var/log/rustdesk/
+# Make Folder /var/log/rustdesk-server/
+if [ ! -d "/var/log/rustdesk-server" ]; then
+    echo "Creating /var/log/rustdesk-server"
+    sudo mkdir -p /var/log/rustdesk-server/
 fi
-sudo chown "${uname}" -R /var/log/rustdesk/
+sudo chown "${uname}" -R /var/log/rustdesk-server/
 
 # Setup Systemd to launch hbbs
 rustdeskhbbs="$(cat << EOF
@@ -164,18 +164,18 @@ WorkingDirectory=/var/lib/rustdesk-server/
 User=${uname}
 Group=${uname}
 Restart=always
-StandardOutput=append:/var/log/rustdesk/rustdeskhbbs.log
-StandardError=append:/var/log/rustdesk/rustdeskhbbs.error
+StandardOutput=append:/var/log/rustdesk-server/hbbs.log
+StandardError=append:/var/log/rustdesk-server/hbbs.error
 # Restart service after 10 seconds if node service crashes
 RestartSec=10
 [Install]
 WantedBy=multi-user.target
 EOF
 )"
-echo "${rustdeskhbbs}" | sudo tee /etc/systemd/system/rustdeskhbbs.service > /dev/null
+echo "${rustdeskhbbs}" | sudo tee /etc/systemd/system/rustdesk-hbbs.service > /dev/null
 sudo systemctl daemon-reload
-sudo systemctl enable rustdeskhbbs.service
-sudo systemctl start rustdeskhbbs.service
+sudo systemctl enable rustdesk-hbbs.service
+sudo systemctl start rustdesk-hbbs.service
 
 # Setup Systemd to launch hbbr
 rustdeskhbbr="$(cat << EOF
@@ -189,21 +189,21 @@ WorkingDirectory=/var/lib/rustdesk-server/
 User=${uname}
 Group=${uname}
 Restart=always
-StandardOutput=append:/var/log/rustdesk/rustdeskhbbr.log
-StandardError=append:/var/log/rustdesk/rustdeskhbbr.error
+StandardOutput=append:/var/log/rustdesk-server/hbbr.log
+StandardError=append:/var/log/rustdesk-server/hbbr.error
 # Restart service after 10 seconds if node service crashes
 RestartSec=10
 [Install]
 WantedBy=multi-user.target
 EOF
 )"
-echo "${rustdeskhbbr}" | sudo tee /etc/systemd/system/rustdeskhbbr.service > /dev/null
+echo "${rustdeskhbbr}" | sudo tee /etc/systemd/system/rustdesk-hbbr.service > /dev/null
 sudo systemctl daemon-reload
-sudo systemctl enable rustdeskhbbr.service
-sudo systemctl start rustdeskhbbr.service
+sudo systemctl enable rustdesk-hbbr.service
+sudo systemctl start rustdesk-hbbr.service
 
 while ! [[ $CHECK_RUSTDESK_READY ]]; do
-  CHECK_RUSTDESK_READY=$(sudo systemctl status rustdeskhbbr.service | grep "Active: active (running)")
+  CHECK_RUSTDESK_READY=$(sudo systemctl status rustdesk-hbbr.service | grep "Active: active (running)")
   echo -ne "Rustdesk Relay not ready yet...${NC}\n"
   sleep 3
 done
@@ -230,9 +230,9 @@ select WANOPT in "${WAN[@]}"; do
 case $WANOPT in
 "IP")
 wanip=$(dig @resolver4.opendns.com myip.opendns.com +short)
-ufw allow 21114/tcp
+sudo ufw allow 21114/tcp
 
-ufw enable && ufw reload
+sudo ufw enable && ufw reload
 break
 ;;
 
@@ -244,8 +244,8 @@ if ! [[ $wanip =~ ^[a-zA-Z0-9]+([a-zA-Z0-9.-]*[a-zA-Z0-9]+)?$ ]]; then
     echo -e "${RED}Invalid domain/dns address${NC}"
     exit 1
 fi
-apt -y install nginx
-apt -y install python3-certbot-nginx
+sudo apt -y install nginx
+sudo apt -y install python3-certbot-nginx
 
 rustdesknginx="$(
   cat <<EOF
@@ -259,17 +259,17 @@ EOF
 )"
 echo "${rustdesknginx}" | sudo tee /etc/nginx/sites-available/rustdesk.conf >/dev/null
 
-rm /etc/nginx/sites-available/default
-rm /etc/nginx/sites-enabled/default
+sudo rm /etc/nginx/sites-available/default
+sudo rm /etc/nginx/sites-enabled/default
 
 sudo ln -s /etc/nginx/sites-available/rustdesk.conf /etc/nginx/sites-enabled/rustdesk.conf 
 
-ufw allow 80/tcp
-ufw allow 443/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
 
-ufw enable && ufw reload
+sudo ufw enable && ufw reload
 
-certbot --nginx -d ${wanip}
+sudo certbot --nginx -d ${wanip}
 
 break
 ;;
